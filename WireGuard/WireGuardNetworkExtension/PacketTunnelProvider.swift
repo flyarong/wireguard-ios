@@ -10,6 +10,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     // MARK: Properties
 
     private var wgHandle: Int32?
+    private var lastError: PacketTunnelProviderError = .noError
 
     // MARK: NEPacketTunnelProvider
 
@@ -20,7 +21,9 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
         guard let tunnelProviderProtocol = self.protocolConfiguration as? NETunnelProviderProtocol,
             let tunnelConfiguration = tunnelProviderProtocol.tunnelConfiguration() else {
-                startTunnelCompletionHandler(PacketTunnelProviderError.savedProtocolConfigurationIsInvalid)
+                let error = PacketTunnelProviderError.savedProtocolConfigurationIsInvalid
+                lastError = error
+                startTunnelCompletionHandler(error)
                 return
         }
 
@@ -33,7 +36,9 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         } catch DNSResolverError.dnsResolutionFailed(let hostnames) {
             os_log("Starting tunnel failed: DNS resolution failure for %{public}d hostnames (%{public}s)", log: OSLog.default,
                    type: .error, hostnames.count, hostnames.joined(separator: ", "))
-            startTunnelCompletionHandler(PacketTunnelProviderError.dnsResolutionFailure(hostnames: hostnames))
+            let error = PacketTunnelProviderError.dnsResolutionFailure(hostnames: hostnames)
+            lastError = error
+            startTunnelCompletionHandler(error)
             return
         } catch {
             // There can be no other errors from DNSResolver.resolveSync()
@@ -53,7 +58,9 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         let fd = packetFlow.value(forKeyPath: "socket.fileDescriptor") as! Int32
         if fd < 0 {
             os_log("Starting tunnel failed: Could not determine file descriptor", log: OSLog.default, type: .error)
-            startTunnelCompletionHandler(PacketTunnelProviderError.couldNotStartWireGuard)
+            let error = PacketTunnelProviderError.couldNotStartWireGuard
+            lastError = error
+            startTunnelCompletionHandler(error)
             return
         }
 
@@ -63,6 +70,10 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         if handle < 0 {
             os_log("Starting tunnel failed: Could not start WireGuard", log: OSLog.default, type: .error)
             startTunnelCompletionHandler(PacketTunnelProviderError.couldNotStartWireGuard)
+            let error = PacketTunnelProviderError.couldNotStartWireGuard
+            lastError = error
+            startTunnelCompletionHandler(error)
+
             return
         }
 
@@ -71,10 +82,12 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         // Apply network settings
 
         let networkSettings: NEPacketTunnelNetworkSettings = packetTunnelSettingsGenerator.generateNetworkSettings()
-        setTunnelNetworkSettings(networkSettings) { (error) in
+        setTunnelNetworkSettings(networkSettings) { [weak self] (error) in
             if let error = error {
                 os_log("Starting tunnel failed: Error setting network settings: %s", log: OSLog.default, type: .error, error.localizedDescription)
-                startTunnelCompletionHandler(PacketTunnelProviderError.coultNotSetNetworkSettings)
+                let error = PacketTunnelProviderError.couldNotSetNetworkSettings
+                self?.lastError = error
+                startTunnelCompletionHandler(error)
             } else {
                 startTunnelCompletionHandler(nil /* No errors */)
             }
@@ -88,6 +101,21 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             wgTurnOff(handle)
         }
         completionHandler()
+    }
+
+    // Handle messages from the container app
+    override func handleAppMessage(_ messageData: Data, completionHandler: ((Data?) -> Void)? = nil) {
+        os_log("Handling app message", log: OSLog.default, type: .info)
+        guard let requestMessage = PacketTunnelProviderMessage.Request(fromEncodedData: messageData) else {
+            completionHandler?(nil)
+            return
+        }
+        switch (requestMessage) {
+        case .retrieveLastError:
+            let response: PacketTunnelProviderMessage.Response = .lastError(lastError)
+            completionHandler?(response.encodeToData())
+            return
+        }
     }
 
     private func configureLogger() {

@@ -333,6 +333,7 @@ class TunnelContainer: NSObject {
             forName: .NEVPNStatusDidChange,
             object: connection,
             queue: nil) { [weak self] (_) in
+                print("Status: \(connection.status.rawValue)")
                 guard let s = self else { return }
                 if ((s.status == .restarting) && (connection.status == .disconnected || connection.status == .disconnecting)) {
                     // Don't change s.status when disconnecting for a restart
@@ -340,6 +341,24 @@ class TunnelContainer: NSObject {
                         self?.startActivation(completionHandler: { _ in })
                     }
                     return
+                }
+                if ((s.status == .activating) && (connection.status == .disconnecting || connection.status == .disconnected)) {
+                    // We encountered an error while turning on the tunnel
+                    print("We encountered an error while turning on the tunnel")
+                    let session = connection as! NETunnelProviderSession
+                    let retrieveLastErrorMessage: PacketTunnelProviderMessage.Request = .retrieveLastError
+                    do {
+                        print("Sending message")
+                        try session.sendProviderMessage(retrieveLastErrorMessage.encodeToData()) { (responseData) in
+                            guard let responseData = responseData else { return }
+                            guard let responseMessage = PacketTunnelProviderMessage.Response(fromEncodedData: responseData) else { return }
+                            if case .lastError(let error) = responseMessage {
+                                print("Error from extension: \(error)")
+                            }
+                        }
+                    } catch {
+                        print("Error sending message")
+                    }
                 }
                 s.status = TunnelStatus(from: connection.status)
                 if (s.status == .inactive) {

@@ -4,15 +4,17 @@
 import Foundation
 
 enum PacketTunnelProviderError: Error {
+    case noError
     case savedProtocolConfigurationIsInvalid
     case dnsResolutionFailure(hostnames: [String])
     case couldNotStartWireGuard
-    case coultNotSetNetworkSettings
+    case couldNotSetNetworkSettings
 }
 
 extension PacketTunnelProviderError: Codable {
     // Coding keys
     enum CodingKeys: CodingKey {
+        case noError
         case savedProtocolConfigurationIsInvalid
         case dnsResolutionFailure
         case couldNotStartWireGuard
@@ -28,13 +30,15 @@ extension PacketTunnelProviderError: Codable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
+        case .noError:
+            try container.encode(true, forKey: CodingKeys.noError)
         case .savedProtocolConfigurationIsInvalid:
             try container.encode(true, forKey: CodingKeys.savedProtocolConfigurationIsInvalid)
         case .dnsResolutionFailure(let hostnames):
             try container.encode(hostnames, forKey: CodingKeys.dnsResolutionFailure)
         case .couldNotStartWireGuard:
             try container.encode(true, forKey: CodingKeys.couldNotStartWireGuard)
-        case .coultNotSetNetworkSettings:
+        case .couldNotSetNetworkSettings:
             try container.encode(true, forKey: CodingKeys.couldNotSetNetworkSettings)
         }
     }
@@ -42,6 +46,11 @@ extension PacketTunnelProviderError: Codable {
     // Decoding
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        if let isValid = try? container.decode(Bool.self, forKey: CodingKeys.noError), isValid {
+            self = .noError
+            return
+        }
 
         if let isValid = try? container.decode(Bool.self, forKey: CodingKeys.savedProtocolConfigurationIsInvalid), isValid {
             self = .savedProtocolConfigurationIsInvalid
@@ -58,8 +67,8 @@ extension PacketTunnelProviderError: Codable {
             return
         }
 
-        if let isValid = try? container.decode(Bool.self, forKey: CodingKeys.coultNotSetNetworkSettings), isValid {
-            self = .coultNotSetNetworkSettings
+        if let isValid = try? container.decode(Bool.self, forKey: CodingKeys.couldNotSetNetworkSettings), isValid {
+            self = .couldNotSetNetworkSettings
             return
         }
 
