@@ -4,14 +4,6 @@
 import NetworkExtension
 import os.log
 
-enum PacketTunnelProviderError: Error {
-    case invalidOptions
-    case savedProtocolConfigurationIsInvalid
-    case dnsResolutionFailure(hostnames: [String])
-    case couldNotStartWireGuard
-    case coultNotSetNetworkSettings
-}
-
 /// A packet tunnel provider object.
 class PacketTunnelProvider: NEPacketTunnelProvider {
 
